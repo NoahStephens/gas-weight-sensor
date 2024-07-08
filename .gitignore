@@ -1,0 +1,8 @@
+**.pyc
+/.vscode
+/venv
+*.db
+/sysctl/*.service
+*.obj.config
+**__pychache__/
+.DS_Store
