@@ -1,3 +1,6 @@
 [submodule "lib/lib/hx711py"]
 	path = lib/lib/hx711py
 	url = https://github.com/tatobari/hx711py.git
+[submodule "lib/hx711py"]
+	path = lib/hx711py
+	url = https://github.com/tatobari/hx711py.git
