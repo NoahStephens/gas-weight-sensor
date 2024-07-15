@@ -52,7 +52,7 @@ class HX711Device(object):
         self._device = hx711.HX711(dout=DATA_PIN, pd_sck=CLOCK_PIN, gain=128) if init_hx is None else init_hx
         self._device.set_reading_format("MSB", "MSB")
         self._hx_config_save_file_name = "hx711.obj.config"
-        GPIO.setmode(LED_PIN, GPIO.OUT) # setup LED pin for reading
+        GPIO.setup(LED_PIN, GPIO.OUT) # setup LED pin for reading
 
         # check if device object backup exists
         if os.path.isfile(self._hx_config_save_file_name):
