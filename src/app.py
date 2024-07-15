@@ -29,12 +29,12 @@ class DBWorker(threading.Thread):
         self._db = sqlite3.connect("{}.{}.db".format(APP_NAME, WELDER_TYPE.name))
         self._queue = queue.Queue()
 
-    def enqueue(self, sql, sql_params=None):
-        self._queue.put((sql, sql_params), False)
+    def enqueue(self, sql, sql_params=None, cb=None):
+        self._queue.put((sql, sql_params, cb), False)
 
     def run(self):
         while 1:
-            (sql, sql_params) = self._queue.get(block=True)
+            (sql, sql_params, cb) = self._queue.get(block=True)
             cur = self._db.cursor()
             
             if sql_params:
@@ -43,6 +43,9 @@ class DBWorker(threading.Thread):
                 cur.execute(sql)
 
             cur.execute(sql)
+            if cb: 
+                cb(cur.fetchall())
+
             self._db.commit()
             cur.close()
 
@@ -115,9 +118,9 @@ class HX711Device(object):
         return {"tared-weight": self._tared_value}
 
 class SensorWorker(threading.Thread):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, db, *args, **kwargs):
         threading.Thread.__init__(self)
-        self._db = DBWorker()
+        self._db = db
         self._db.start()
         self._hx_device = HX711Device()
 
@@ -139,7 +142,8 @@ class SensorWorker(threading.Thread):
         return self._hx_device
     
 app = FastAPI()
-sensor = SensorWorker()
+db = DBWorker()
+sensor = SensorWorker(db)
 
 @app.get("/{}".format(WELDER_TYPE.name))
 async def get_data():
@@ -156,14 +160,18 @@ class Filter(BaseModel):
 
 @app.post("/{}".format(WELDER_TYPE.name))
 async def get_data_range(filter: Filter):
+    data = None
+
+    def set_data(_data):
+        data = _data
+
     time_start = calendar.timegm(filter.timestart.utctimetuple())
     time_end = calendar.timegm(filter.timeend.utctimetuple())
-    con = sqlite3.connect("{}.{}.db".format(APP_NAME, WELDER_TYPE.name))
-    cur = con.cursor()
-    cur.execute("SELECT * FROM Weights WHERE CreatedDate >= {} AND CreatedData <= {}".format(time_start, time_end))
+
+    db.enqueue("SELECT * FROM Weights WHERE CreatedDate >= {} AND CreatedData <= {}".format(time_start, time_end), None, set_data)
 
     
-    return {"weights": cur.fetchall()}    
+    return {"weights": data}    
 
 @app.get("/{}/tare".format(WELDER_TYPE.name))
 async def get_tare():
