@@ -83,7 +83,7 @@ class HX711Device(object):
         # If Raspberry Pi unexpectedly powers down, load the settings.
         print('Saving the HX711 state to swap file on persistent memory as {}'.format(self._hx_config_save_file_name))
         with open(self._hx_config_save_file_name, 'wb') as file:
-            pickle.dump(self._hx, file)
+            pickle.dump(self._device, file)
             file.flush()
             os.fsync(file.fileno())
             # you have to flush, fsynch and close the file all the time.
