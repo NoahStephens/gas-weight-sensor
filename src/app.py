@@ -2,7 +2,6 @@ import time
 import threading
 from fastapi import FastAPI, BackgroundTasks
 import uvicorn
-from hx711 import HX711
 import RPi.GPIO as GPIO
 from pydantic import BaseModel
 from datetime import datetime, timedelta
@@ -12,11 +11,14 @@ import pickle
 import queue
 import calendar
 
+from lib.hx711py import hx711
+
 from config import APP_NAME
 from config import WELDER_TYPE
 
-from config import SDA_PIN
-from config import SCL_PIN
+from config import SENSOR_POLLING_RATE
+from config import DATA_PIN
+from config import CLOCK_PIN
 from config import LED_PIN
 
 from config import AVG_FILTER_N
@@ -46,57 +48,33 @@ class DBWorker(threading.Thread):
 
 
 class HX711Device(object):
-    def __init__(self, init_hx: HX711 | None = None):
-        GPIO.setmode(GPIO.BCM)
-        self._hx = HX711(SDA_PIN, SCL_PIN) if init_hx is None else init_hx
+    def __init__(self, init_hx: hx711.HX711 | None = None):
+        self._device = hx711.HX711(dout=DATA_PIN, pd_sck=CLOCK_PIN, gain=128) if init_hx is None else init_hx
+        self._device.set_reading_format("MSB", "MSB")
         self._hx_config_save_file_name = "hx711.obj.config"
-        self._tare = 0
+        GPIO.setmode(LED_PIN, GPIO.OUT) # setup LED pin for reading
 
-    def calibrate(self, calibration_weight: float):
-        """ Takes measurement of known weight and set the devices reading to calibration ratio. Also saves the ratio and zero to disk."""
-        uncalibrated_weight = self._hx.get_raw_data()
-        if uncalibrated_weight:
-            print('Mean value from HX711 subtracted by offset:', uncalibrated_weight)
-
-            # set scale ratio for particular channel and gain which is
-            # used to calculate the conversion to units. Required argument is only
-            # scale ratio. Without arguments 'channel' and 'gain_A' it sets
-            # the ratio for current channel and gain.
-            ratio = uncalibrated_weight / calibration_weight  # calculate the ratio for channel A and gain 128
-            self._hx.set_scale_ratio(ratio)  # set ratio for current channel
-            print('Ratio is set at {}.'.format(ratio))
+        # check if device object backup exists
+        if os.path.isfile(self._hx_config_save_file_name):
+            with open(self._hx_config_save_file_name, 'rb') as swap_file:
+                self._device = pickle.load(swap_file) # load the device from disk if it does
         else:
-            raise ValueError(
-                'Cannot calculate mean value. Try debug mode. Variable reading:',
-                uncalibrated_weight)
-        
-        reading = self._hx.get_raw_data_mean()
-        if reading:  # always check if you get correct value or only False
-                # now the value is close to 0
-            print('Data subtracted by offset (should be 0):',
-                reading)
-        else:
-            print('invalid data', reading)
-        GPIO.cleanup()
+            self.save_to_disk() # save to disk in the event of a power failure before taring.
 
-        return {"calibration-weight": calibration_weight, "uncalibrated-weight": uncalibrated_weight, "calibrated-weight": reading, "ratio": ratio}
-    
-    def get_doctored_data(self, times: int):
-        return self._hx.get_raw_data(times) - self._tare
+        # tare on device instance. The user may also need to tare later...
+        self._tared_value = self.tare()
         
     def tare(self):
         # measure tare and save the value as offset for current channel
             # and gain selected. That means channel A and gain 128
-        reading = self._hx.get_raw_data()
-        self._tare = reading
+        reading = self._hx.tare()
+        self._tared_value = reading
         if reading:  # always check if you get correct value or only False
                 # now the value is close to 0
             print('Tared weight (should be 0):',
                 reading)
         else:
             print('invalid data', reading)
-
-        GPIO.cleanup()
 
         return {"tared-weight": reading}
     
@@ -110,6 +88,15 @@ class HX711Device(object):
             os.fsync(file.fileno())
             # you have to flush, fsynch and close the file all the time.
             # This will write the file to the drive. It is slow but safe.
+
+    def get_weight(self):
+        GPIO.output(LED_PIN, GPIO.HIGH)
+        time.sleep(1)
+        GPIO.output(LED_PIN, GPIO.LOW)
+        return self._device.get_weight()
+    
+    def get_formatted_weight(self):
+        return {"weight": self._device.get_weight()}
     
     def __enter__(self):
         return self._hx
@@ -119,7 +106,7 @@ class HX711Device(object):
 
     @property
     def tare_value(self):
-        return self._tare
+        return {"tared-weight": self._tared_value}
 
 class SensorWorker(threading.Thread):
     def __init__(self, *args, **kwargs):
@@ -131,15 +118,14 @@ class SensorWorker(threading.Thread):
     def get_data(self):
         try:
             with self._hx_device as hx:
-                reading = hx.get_weight_mean(AVG_FILTER_N)
-                print("Reading {}".format(reading), 'g')
-                return reading
+                return hx.get_weight()
 
         except Exception as e:
-            return e
+            raise e
     
     def run(self,*args,**kwargs):
         while True:
+            time.sleep(SENSOR_POLLING_RATE)
             self._db.enqueue("INSERT INTO Weights VALUES (?, ?)", (time.time_ns(), self.get_data))
 
     @property
@@ -169,12 +155,13 @@ async def get_data_range(filter: Filter):
     con = sqlite3.connect("{}.{}.db".format(APP_NAME, WELDER_TYPE.name))
     cur = con.cursor()
     cur.execute("SELECT * FROM Weights WHERE CreatedDate >= {} AND CreatedData <= {}".format(time_start, time_end))
+
     
     return {"weights": cur.fetchall()}    
 
 @app.get("/{}/tare".format(WELDER_TYPE.name))
 async def get_tare():
-    return {"tared-weight": sensor.hx_device.tare_value}
+    return sensor.hx_device.tare_value
 
 @app.put("/{}/tare".format(WELDER_TYPE.name))
 async def put_tare():
