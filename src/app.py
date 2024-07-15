@@ -55,14 +55,8 @@ class HX711Device(object):
         GPIO.setup(LED_PIN, GPIO.OUT) # setup LED pin for reading
 
         # check if device object backup exists
-        if os.path.isfile(self._hx_config_save_file_name):
-            with open(self._hx_config_save_file_name, 'rb') as swap_file:
-                self._device = pickle.load(swap_file) # load the device from disk if it does
-        else:
-            self.save_to_disk() # save to disk in the event of a power failure before taring.
+        self.restore_from_disk()
 
-        # tare on device instance. The user may also need to tare later...
-        self._tared_value = self.tare()
         
     def tare(self):
         # measure tare and save the value as offset for current channel
@@ -83,11 +77,23 @@ class HX711Device(object):
         # If Raspberry Pi unexpectedly powers down, load the settings.
         print('Saving the HX711 state to swap file on persistent memory as {}'.format(self._hx_config_save_file_name))
         with open(self._hx_config_save_file_name, 'wb') as file:
-            pickle.dump(self._device, file)
+            device_config = (self._device.get_gain(), self._device.get_offset(), self._device.get_reference_unit())
+            pickle.dump(device_config, file)
             file.flush()
             os.fsync(file.fileno())
             # you have to flush, fsynch and close the file all the time.
             # This will write the file to the drive. It is slow but safe.
+
+    def restore_from_disk(self):
+        """ restores gain, offset, and reference unit from disk. used for tare."""
+        if os.path.isfile(self._hx_config_save_file_name):
+            with open(self._hx_config_save_file_name, 'rb') as swap_file:
+                (_gain, _offset, _reference_unit) = pickle.load(swap_file) # load the device from disk if it does
+                self._device.set_gain(_gain)
+                self._device.set_offset(_offset)
+                self._device.set_reference_unit(_reference_unit)
+        else:
+            self.save_to_disk()
 
     def get_weight(self):
         GPIO.output(LED_PIN, GPIO.HIGH)
@@ -168,6 +174,14 @@ async def put_tare():
     try:
         response = sensor.hx_device.tare()
         return response
+    except Exception as e:
+        return {"Exception": e}
+    
+@app.put("/{}/save".format(WELDER_TYPE.name))
+async def put_save():
+    try:
+        sensor.hx_device.save_to_disk()
+        return {"save_to_disk": "successful"}
     except Exception as e:
         return {"Exception": e}
     
