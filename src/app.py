@@ -26,28 +26,36 @@ from config import AVG_FILTER_N
 class DBWorker(threading.Thread):
     def __init__(self):
         threading.Thread.__init__(self)
-        self._db = sqlite3.connect("{}.{}.db".format(APP_NAME, WELDER_TYPE.name))
+        self._db = sqlite3.connect("{}-{}-db".format(APP_NAME, WELDER_TYPE.name))
         self._queue = queue.Queue()
 
-    def enqueue(self, sql, sql_params=None, cb=None):
+        # first creates a table if not exists
+        self.enqueue("CREATE TABLE IF NOT EXISTS Weights (Id INTEGER PRIMARY KEY AUTOINCREMENT, CreatedDate INTEGER, Data INTEGER)")
+
+    def enqueue(self, sql, sql_params=tuple | None, cb=None):
         self._queue.put((sql, sql_params, cb), False)
 
     def run(self):
         while 1:
             (sql, sql_params, cb) = self._queue.get(block=True)
-            cur = self._db.cursor()
+
+            try:
+                cur = self._db.cursor()
+                
+                if sql_params:
+                    cur.execute(sql, sql_params)
+                else:
+                    cur.execute(sql)
+
+                if cb: 
+                    cb(cur.fetchall())
+
+                self._db.commit()
+            except Exception as e:
+                raise e
             
-            if sql_params:
-                cur.execute(sql, sql_params)
-            else:
-                cur.execute(sql)
-
-            cur.execute(sql)
-            if cb: 
-                cb(cur.fetchall())
-
-            self._db.commit()
-            cur.close()
+            finally:
+                cur.close()
 
 
 class HX711Device(object):
@@ -56,24 +64,26 @@ class HX711Device(object):
         self._device.set_reading_format("MSB", "MSB")
         self._hx_config_save_file_name = "hx711.obj.config"
         GPIO.setup(LED_PIN, GPIO.OUT) # setup LED pin for reading
+        self._tared_value = 0
 
         # check if device object backup exists
         self.restore_from_disk()
 
-        
+    def reset(self):
+        self._device.reset()
+        return {"reset":"successful"}
+
+    def calibrate(self, known_weight):
+        """ calibration routine to give the scale a unit to use and to scale the value accordingly. Make sure to tare the scale first to get an accurate weight. Place the object of known weight on the scale first before calling. """
+        reading = self.get_weight()
+        referenceUnit = reading / known_weight
+        self._device.set_reference_unit(referenceUnit)
+        return {"reference_unit": referenceUnit}
+
     def tare(self):
         # measure tare and save the value as offset for current channel
             # and gain selected. That means channel A and gain 128
-        reading = self._hx.tare()
-        self._tared_value = reading
-        if reading:  # always check if you get correct value or only False
-                # now the value is close to 0
-            print('Tared weight (should be 0):',
-                reading)
-        else:
-            print('invalid data', reading)
-
-        return {"tared-weight": reading}
+        self._tared_value = self._device.tare()
     
     def save_to_disk(self):
         # This is how you can save the ratio and offset in order to load it later.
@@ -99,18 +109,13 @@ class HX711Device(object):
             self.save_to_disk()
 
     def get_weight(self):
-        GPIO.output(LED_PIN, GPIO.HIGH)
-        time.sleep(1)
-        GPIO.output(LED_PIN, GPIO.LOW)
-        return self._device.get_weight()
-    
-    def get_formatted_weight(self):
-        return {"weight": self._device.get_weight()}
+        return self._device.get_weight(15)
     
     def __enter__(self):
-        return self._hx
+        return self._device
     
-    def __exit__(self):
+    def __exit__(self, *args, **kwagrs):
+        return
         GPIO.cleanup()
 
     @property
@@ -123,19 +128,12 @@ class SensorWorker(threading.Thread):
         self._db = db
         self._db.start()
         self._hx_device = HX711Device()
-
-    def get_data(self):
-        try:
-            with self._hx_device as hx:
-                return hx.get_weight()
-
-        except Exception as e:
-            raise e
     
     def run(self,*args,**kwargs):
         while True:
             time.sleep(SENSOR_POLLING_RATE)
-            self._db.enqueue("INSERT INTO Weights VALUES (?, ?)", (time.time_ns(), self.get_data))
+            data = self._hx_device.get_weight()
+            self._db.enqueue("INSERT INTO Weights VALUES (NULL, ?, ?)", (time.time_ns(), data, ))
 
     @property
     def hx_device(self):
@@ -145,10 +143,10 @@ app = FastAPI()
 db = DBWorker()
 sensor = SensorWorker(db)
 
-@app.get("/{}".format(WELDER_TYPE.name))
+@app.get("/")
 async def get_data():
     try:
-        reading = sensor.get_data()
+        reading = sensor.hx_device.get_weight()
         return {"weight": reading}
     
     except Exception as e:
@@ -158,7 +156,10 @@ class Filter(BaseModel):
     timestart : datetime
     timeend: datetime
 
-@app.post("/{}".format(WELDER_TYPE.name))
+class Calibrate(BaseModel):
+    known_weight : float
+
+@app.post("/")
 async def get_data_range(filter: Filter):
     data = None
 
@@ -173,26 +174,43 @@ async def get_data_range(filter: Filter):
     
     return {"weights": data}    
 
-@app.get("/{}/tare".format(WELDER_TYPE.name))
+@app.get("/tare")
 async def get_tare():
-    return sensor.hx_device.tare_value
-
-@app.put("/{}/tare".format(WELDER_TYPE.name))
-async def put_tare():
     try:
-        response = sensor.hx_device.tare()
-        return response
+        sensor.hx_device.tare()
+        return sensor.hx_device.tare_value
     except Exception as e:
         return {"Exception": e}
     
-@app.put("/{}/save".format(WELDER_TYPE.name))
+@app.get("/save")
 async def put_save():
     try:
         sensor.hx_device.save_to_disk()
         return {"save_to_disk": "successful"}
     except Exception as e:
-        return {"Exception": e}
+        return {"save_to_disk": "error", "Exception": e}
     
+@app.get("/restore")
+async def get_restore():
+    try:
+        sensor.hx_device.restore_from_disk()
+        return {"restore_from_disk": "successful"}
+    except Exception as e:
+        return {"restore_from_disk": "error", "Exception": e}
+    
+@app.get("/calibrate")
+async def get_calibrate():
+    try:
+        return sensor.hx_device.calibrate()
+    except Exception as e:
+        return {"calibrate": "error", "Exception": e}
+    
+@app.get("/reset")
+async def get_reset():
+    try:
+        return sensor.hx_device.reset()
+    except Exception as e:
+        return {"reset": "error", "Exception": e}
 
 if __name__ == "__main__":
     sensor.start()
