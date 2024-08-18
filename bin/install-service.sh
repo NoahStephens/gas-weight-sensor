@@ -33,7 +33,7 @@ deactivate
 for file in sysctl/*.service; do
   echo "copying " $file " to /etc/systemd/system"
   cp $file /etc/systemd/system/
-  systemctl deamon-reload
+  systemctl daemon-reload
   echo "starting service..."
   systemctl start "${file##*/}"
 done
