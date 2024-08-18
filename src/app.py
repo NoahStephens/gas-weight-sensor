@@ -70,8 +70,8 @@ class HX711Device(object):
         self._tared_value = 0
         self._calibration_value = 0
 
-        if DEBUG:
-            print("sensor_device_init: reference_unit: {} tared_value: {} calibration_value: {} raw_reading: {} ".format(REFERENCE_UNIT, self._tared_value, self._calibration_value, self._device.get_weight(10)))
+        # if DEBUG:
+        #     print("sensor_device_init: reference_unit: {} tared_value: {} calibration_value: {} raw_reading: {} ".format(REFERENCE_UNIT, self._tared_value, self._calibration_value, self._device.get_weight(10)))
 
         # check if device object backup exists
         self.restore_from_disk()
