@@ -3,7 +3,8 @@ import os
 from config import APP_NAME
 from config import WELDER_TYPE
 
-pwd = os.path.dirname(os.path.abspath(__file__))
+# pwd = os.path.dirname(os.path.abspath(__file__))
+pwd = os.getcwd()
 print("your working directory: {}".format(pwd))
 with open("sysctl/{}-{}.service".format(WELDER_TYPE, APP_NAME), "w+t") as file:
     file.write("[Unit]\n")
