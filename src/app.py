@@ -71,7 +71,7 @@ class HX711Device(object):
         self._calibration_value = 0
 
         if DEBUG:
-            print("sensor_device_init: reference_unit: {} tared_value: {} calibration_value: {} raw_reading: {} ".format(REFERENCE_UNIT, self._tared_value, self._calibration_value, self._device.get_weight(15)))
+            print("sensor_device_init: reference_unit: {} tared_value: {} calibration_value: {} raw_reading: {} ".format(REFERENCE_UNIT, self._tared_value, self._calibration_value, self.get_weight()))
 
         # check if device object backup exists
         self.restore_from_disk()
@@ -82,7 +82,7 @@ class HX711Device(object):
 
     def calibrate(self, known_weight):
         """ calibration routine to give the scale a unit to use and to scale the value accordingly. Make sure to tare the scale first to get an accurate weight. Place the object of known weight on the scale first before calling. """
-        reading = self.get_weight(10)
+        reading = self.get_weight()
         self._calibration_value = reading / known_weight
         self._device.set_reference_unit(self._calibration_value)
         if DEBUG: 
@@ -148,7 +148,7 @@ class SensorWorker(threading.Thread):
     def run(self,*args,**kwargs):
         while True:
             time.sleep(SENSOR_POLLING_RATE)
-            data = self._hx_device.get_weight(10)
+            data = self._hx_device.get_weight()
             # self._db.enqueue("INSERT INTO Weights VALUES (NULL, ?, ?)", (time.time_ns(), data, ))
             if DEBUG:
                 print("sensor_poll(@{}): {}".format(SENSOR_POLLING_RATE, data))
