@@ -2,9 +2,7 @@
 
 # Installs a system manager service
 
-source venv/bin/activate
 
-pip install -r requirements.txt
 
 if [ -n "$ZSH_VERSION" ]; then
   echo "zsh: ${ZSH_VERSION}"
@@ -23,6 +21,10 @@ else
   echo "Exiting..."
   exit
 fi
+
+PYTHONPATH=$PWD $PWD/venv/bin/python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
 
 # Build system control serice
 PYTHONPATH=$PWD $PWD/venv/bin/python sysctl/build.py
