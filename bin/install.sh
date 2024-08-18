@@ -22,7 +22,7 @@ else
   exit
 fi
 
-ehco "creating python virtual env venv"
+echo "creating python virtual env venv"
 python3 -m venv venv
 source venv/bin/activate
 echo "installing reqs..."
