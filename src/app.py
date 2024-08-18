@@ -22,7 +22,6 @@ from config import CLOCK_PIN
 from config import LED_PIN
 from config import DEBUG
 
-from config import AVG_FILTER_N
 from config import REFERENCE_UNIT
 
 class DBWorker(threading.Thread):
@@ -72,7 +71,7 @@ class HX711Device(object):
         self._calibration_value = 0
 
         if DEBUG:
-            print("sensor_device_init: reference_unit: {} tared_value: {} calibration_value: {} raw_reading: {} ".format(REFERENCE_UNIT, self._tared_value, self._calibration_value, self.get_weight()))
+            print("sensor_device_init: reference_unit: {} tared_value: {} calibration_value: {} raw_reading: {} ".format(REFERENCE_UNIT, self._tared_value, self._calibration_value, self._device.get_weight(15)))
 
         # check if device object backup exists
         self.restore_from_disk()
@@ -83,7 +82,7 @@ class HX711Device(object):
 
     def calibrate(self, known_weight):
         """ calibration routine to give the scale a unit to use and to scale the value accordingly. Make sure to tare the scale first to get an accurate weight. Place the object of known weight on the scale first before calling. """
-        reading = self.get_weight(AVG_FILTER_N)
+        reading = self.get_weight(10)
         self._calibration_value = reading / known_weight
         self._device.set_reference_unit(self._calibration_value)
         if DEBUG: 
@@ -126,7 +125,7 @@ class HX711Device(object):
             self.save_to_disk()
 
     def get_weight(self):
-        return self._device.get_weight(AVG_FILTER_N)
+        return self._device.get_weight(10)
     
     def __enter__(self):
         return self._device
@@ -149,7 +148,7 @@ class SensorWorker(threading.Thread):
     def run(self,*args,**kwargs):
         while True:
             time.sleep(SENSOR_POLLING_RATE)
-            data = self._hx_device.get_weight(AVG_FILTER_N)
+            data = self._hx_device.get_weight(10)
             # self._db.enqueue("INSERT INTO Weights VALUES (NULL, ?, ?)", (time.time_ns(), data, ))
             if DEBUG:
                 print("sensor_poll(@{}): {}".format(SENSOR_POLLING_RATE, data))

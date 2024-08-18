@@ -24,4 +24,3 @@ LED_PIN = 25    # GPIO25
 
 ''' Program Specific Variables'''
 REFERENCE_UNIT = 7455.333/311.845
-AVG_FILTER_N = 10
