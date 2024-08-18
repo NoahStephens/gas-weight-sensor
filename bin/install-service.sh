@@ -36,4 +36,5 @@ for file in sysctl/*.service; do
   systemctl daemon-reload
   echo "starting service..."
   systemctl start "${file##*/}"
+  systemctl enable "${file##*/}"
 done

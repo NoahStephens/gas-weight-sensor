@@ -90,10 +90,13 @@ class HX711Device(object):
             print("calibration: known_weight: {} reading: {} reference_unit (reading/known_weight): {} ".format(known_weight, reading, self._calibration_value))
         return {"reference_unit": self._calibration_value}
 
-    def tare(self):
+    def tare(self, value=None):
         # measure tare and save the value as offset for current channel
             # and gain selected. That means channel A and gain 128
-        self._tared_value = self._device.tare()
+        if value:
+            self._device.set_offset(value)
+        else:
+            self._tared_value = self._device.tare()
         if DEBUG:
             print("tare: new offset is {}".format(self._tared_value))
     
@@ -178,6 +181,9 @@ class Filter(BaseModel):
 class Calibrate(BaseModel):
     known_weight : float
 
+class Tare(BaseModel):
+    tare_value : float
+
 @app.post("/")
 async def get_data_range(filter: Filter):
     return {"weights": "this function is not implemented"}
@@ -205,6 +211,14 @@ async def put_tare():
     try:
         sensor.hx_device.tare()
         return sensor.hx_device.tare_value
+    except Exception as e:
+        return {"Exception": e}
+    
+@app.patch("/tare")
+async def patch_tare(tar:Tare):
+    try:
+        sensor.hx_device.tare(tar.tare_value)
+        return {"tare": tar.tare_value}
     except Exception as e:
         return {"Exception": e}
     
