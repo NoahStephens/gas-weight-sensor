@@ -23,6 +23,7 @@ from config import LED_PIN
 from config import DEBUG
 
 from config import REFERENCE_UNIT
+from config import MEDIAN_VALUE_N
 
 class DBWorker(threading.Thread):
     def __init__(self):
@@ -70,8 +71,8 @@ class HX711Device(object):
         self._tared_value = 0
         self._calibration_value = 0
 
-        # if DEBUG:
-        #     print("sensor_device_init: reference_unit: {} tared_value: {} calibration_value: {} raw_reading: {} ".format(REFERENCE_UNIT, self._tared_value, self._calibration_value, self._device.get_weight(10)))
+        if DEBUG:
+            print("sensor_device_init: reference_unit: {} tared_value: {} calibration_value: {} raw_reading: {} ".format(REFERENCE_UNIT, self._tared_value, self._calibration_value, self.get_weight()))
 
         # check if device object backup exists
         self.restore_from_disk()
@@ -125,7 +126,7 @@ class HX711Device(object):
             self.save_to_disk()
 
     def get_weight(self):
-        return self._device.get_weight(10)
+        return self._device.get_weight(MEDIAN_VALUE_N)
     
     def __enter__(self):
         return self._device

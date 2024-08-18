@@ -24,3 +24,6 @@ LED_PIN = 25    # GPIO25
 
 ''' Program Specific Variables'''
 REFERENCE_UNIT = 7455.333/311.845
+
+# Do NOT make this value even there is a bug in the library code. only odd.
+MEDIAN_VALUE_N = 13
